@@ -4,11 +4,13 @@ import UIKit
 /// One-shot helpers for firing confetti from anywhere — a win screen, a purchase, a tap.
 @MainActor
 public enum Confetti {
-    /// Drops a full-screen confetti burst into the key window.
-    /// Mix ``ConfettiParticle/emoji(_:)``, ``ConfettiParticle/shape(_:)``, and
-    /// ``ConfettiParticle/image(named:)`` — or pass only one kind.
+    /// Full-screen burst. Pass any mix of arrays, or just one.
     public static func burst(
-        particles: [ConfettiParticle] = .default,
+        emojis: [String] = [],
+        shapes: [ConfettiShape] = [],
+        images: [ConfettiImage] = [],
+        lotties: [ConfettiLottie] = [],
+        rives: [ConfettiRive] = [],
         colors: [Color] = ConfettiConfiguration.defaultColors,
         count: Int = 120,
         size: CGFloat = 12,
@@ -17,7 +19,11 @@ public enum Confetti {
         duration: TimeInterval = 3.2
     ) {
         let configuration = ConfettiConfiguration(
-            particles: particles,
+            emojis: emojis,
+            shapes: shapes,
+            images: images,
+            lotties: lotties,
+            rives: rives,
             colors: colors,
             count: count,
             particleSize: size,
@@ -30,12 +36,13 @@ public enum Confetti {
         overlay.burst()
         DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.45) {
             if overlay.superview != nil && overlay.tag == overlayTag {
+                overlay.stop()
                 overlay.removeFromSuperview()
             }
         }
     }
 
-    /// Start a continuous rain/fountain on the key window. Call ``stop()`` to end it.
+    /// Start a continuous rain on the key window. Call ``stop()`` to end it.
     public static func start(configuration: ConfettiConfiguration) {
         var config = configuration
         config.continuous = true
@@ -43,19 +50,21 @@ public enum Confetti {
     }
 
     public static func stop() {
-        keyWindow?.viewWithTag(overlayTag)?.removeFromSuperview()
+        guard let view = keyWindow?.viewWithTag(overlayTag) as? ConfettiHostView else { return }
+        view.stop()
+        view.removeFromSuperview()
     }
 
     @discardableResult
-    private static func installOverlay(configuration: ConfettiConfiguration) -> ConfettiEmitterView {
+    private static func installOverlay(configuration: ConfettiConfiguration) -> ConfettiHostView {
         guard let window = keyWindow else {
-            return ConfettiEmitterView(frame: .zero)
+            return ConfettiHostView(frame: .zero)
         }
-        if let existing = window.viewWithTag(overlayTag) as? ConfettiEmitterView {
+        if let existing = window.viewWithTag(overlayTag) as? ConfettiHostView {
             existing.configuration = configuration
             return existing
         }
-        let overlay = ConfettiEmitterView(frame: window.bounds)
+        let overlay = ConfettiHostView(frame: window.bounds)
         overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         overlay.configuration = configuration
         overlay.tag = overlayTag
