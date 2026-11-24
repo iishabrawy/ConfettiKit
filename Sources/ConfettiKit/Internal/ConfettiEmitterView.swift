@@ -61,9 +61,9 @@ final class ConfettiEmitterView: UIView {
             emitter.emitterPosition = origin
             emitter.emitterSize = CGSize(width: bounds.width * 0.22, height: 1)
         case .rain:
-            emitter.emitterShape = .line
-            emitter.emitterPosition = CGPoint(x: bounds.midX, y: min(origin.y, 8))
-            emitter.emitterSize = CGSize(width: bounds.width, height: 1)
+            emitter.emitterShape = .rectangle
+            emitter.emitterPosition = CGPoint(x: bounds.midX, y: bounds.height * 0.25)
+            emitter.emitterSize = CGSize(width: bounds.width, height: max(1, bounds.height * 0.5))
         case .explosion:
             emitter.emitterShape = .point
             emitter.emitterPosition = origin
@@ -78,7 +78,7 @@ final class ConfettiEmitterView: UIView {
     private func rebuildCells() {
         let colors = configuration.colors.map(\.uiColor)
         var images: [CGImage] = []
-        for particle in configuration.particles {
+        for particle in configuration.staticParticles {
             images.append(contentsOf: ParticleImageRenderer.images(for: particle, colors: colors))
         }
         guard !images.isEmpty else {
@@ -87,7 +87,8 @@ final class ConfettiEmitterView: UIView {
         }
 
         let window: Float = configuration.continuous ? 6 : 0.22
-        let perCell = max(0.4, Float(configuration.count) / Float(images.count) / window)
+        let total = max(configuration.staticCount, 1)
+        let perCell = max(0.4, Float(total) / Float(images.count) / window)
         emitter.emitterCells = images.map { image in
             makeCell(image: image, birthRate: perCell)
         }
@@ -119,11 +120,11 @@ final class ConfettiEmitterView: UIView {
             cell.xAcceleration = 8
         case .rain:
             cell.emissionLongitude = .pi / 2
-            cell.emissionRange = .pi / 14
-            cell.velocity = 140
-            cell.velocityRange = 70
-            cell.yAcceleration = 90
-            cell.xAcceleration = 12
+            cell.emissionRange = .pi / 4
+            cell.velocity = 70
+            cell.velocityRange = 90
+            cell.yAcceleration = 160
+            cell.xAcceleration = 0
         case .explosion:
             cell.emissionLongitude = 0
             cell.emissionRange = .pi * 2
