@@ -1,8 +1,13 @@
-# ConfettiKit
+ConfettiKit
 
-SwiftUI confetti for iOS. Throw **custom images**, **emojis**, and **shapes** — all at once, or just one of them.
+SwiftUI confetti for iOS 17+. Each kind is its own array. Pass all of them, or only the ones you want.
 
-```swift
+    emojis: [String]
+    shapes: [ConfettiShape]
+    images: [ConfettiImage]
+    lotties: [ConfettiLottie] — JSON or dotLottie, played while they fall
+    rives: [ConfettiRive] — .riv files, played while they fall
+
 import SwiftUI
 import ConfettiKit
 
@@ -13,131 +18,71 @@ struct WinView: View {
         Button("You won") { burst += 1 }
             .confettiCannon(
                 trigger: $burst,
-                particles: [
-                    .emoji("🎉"),
-                    .emoji("✨"),
-                    .shape(.star),
-                    .image(named: "logo")
-                ]
+                emojis: ["🎉", "✨"],
+                shapes: [.star, .ribbon],
+                images: [.named("logo")],
+                lotties: [.named("confetti")],
+                rives: [.named("badge")]
             )
     }
 }
-```
 
-Requires **iOS 17+** and SwiftUI.
+Add the Lottie JSON / .lottie and the Rive .riv to your app target. Names can include the extension.
+One kind
 
-## Install
+.confettiCannon(trigger: $burst, emojis: ["🎉", "❤️"])
 
-### Local package (this zip)
+.confettiCannon(trigger: $burst, shapes: [.star, .heart, .ribbon])
 
-1. Unzip `ConfettiKit`.
-2. In Xcode: **File → Add Package Dependencies…**
-3. Choose **Add Local…** and select the `ConfettiKit` folder.
-4. Add the `ConfettiKit` library to your app target.
+.confettiCannon(trigger: $burst, images: [.named("mascot"), .image(photo)])
 
-### Swift Package Manager
+.confettiCannon(trigger: $burst, lotties: [.named("pop"), .file(fileURL)])
 
-```swift
-dependencies: [
-    .package(path: "path/to/ConfettiKit")
-]
-```
+.confettiCannon(trigger: $burst, rives: [.named("truck", animation: "drive")])
 
-## Particles
+count is the total number of pieces, split across the arrays you passed. Lottie and Rive are capped at 20 views per burst.
+Files
+Array	Factory	Notes
+emojis	"🎉"	Original glyph colors
+shapes	.star, .circle, .square, .rectangle, .triangle, .heart, .ribbon, .diamond	Tinted with colors
+images	.named("logo"), .image(uiImage)	Drawn as-is
+lotties	.named("confetti"), .file(url), .data(json)	Loops while falling
+rives	.named("badge", artboard:animation:stateMachine:) .url(url) .data(data)	Loops while falling
+From anywhere
 
-Pass any combination. Omit a kind and it will not appear.
-
-```swift
-// Only emojis
-particles: [.emoji("🎉"), .emoji("❤️")]
-
-// Only shapes
-particles: [.shape(.star), .shape(.ribbon), .shape(.heart)]
-
-// Only a custom image
-particles: [.image(named: "mascot")]
-
-// Mix all three
-particles: [
-    .emoji("🎊"),
-    .shape(.triangle),
-    .sfSymbol("star.fill"),
-    .image(named: "logo"),
-    .image(UIImage(named: "sticker")!)
-]
-```
-
-| Factory | Recolored? |
-|---|---|
-| `.emoji("🎉")` | No — keeps glyph colors |
-| `.shape(.star)` | Yes — uses `colors:` |
-| `.sfSymbol("heart.fill")` | Yes — uses `colors:` |
-| `.image(named:)` / `.image(UIImage)` | No — drawn as-is |
-
-## SwiftUI modifiers
-
-Attach the modifier to a **full-screen** container so particles are not clipped.
-
-```swift
-ContentView()
-    .confettiCannon(
-        trigger: $burst,
-        particles: [.emoji("🎉"), .shape(.circle)],
-        colors: [.pink, .cyan, .orange, .mint],
-        count: 100,
-        size: 14,
-        emission: .cannon
-    )
-```
-
-Boolean style — fires when `isActive` becomes `true`. Pass `continuous: true` to keep raining until it is false.
-
-```swift
-ContentView()
-    .confetti(
-        isActive: $won,
-        particles: [.shape(.heart), .emoji("💖")],
-        emission: .rain,
-        continuous: true
-    )
-```
-
-## Emissions
-
-- `.cannon` — upward burst from the bottom
-- `.rain` — fall from the top
-- `.explosion` — radial burst from the center
-- `.fountain` — rise and fall from the bottom
-
-Override `origin:` with a `UnitPoint` to move the emitter.
-
-## Fire from anywhere
-
-```swift
 Confetti.burst(
-    particles: [
-        .emoji("🏆"),
-        .shape(.star),
-        .image(named: "badge")
-    ],
-    emission: .explosion
+    emojis: ["🏆"],
+    shapes: [.star],
+    images: [.named("badge")],
+    lotties: [.named("spark")],
+    rives: [.named("medal")],
+    emission: .rain
 )
-```
 
-Adds a full-screen overlay to the key window, then removes it.
+.rain fills the top half of the screen, then pieces drift to the bottom on random paths.
+Rive states
 
-## Overlay view
+A state machine starts at its entry state. Inputs move it. Pass one machine, or several states so each piece picks one at random.
 
-```swift
-ZStack {
-    GameView()
-    ConfettiView(
-        configuration: ConfettiConfiguration(
-            particles: [.emoji("🎉"), .shape(.ribbon)],
-            emission: .fountain
-        ),
-        fireToken: burst
+rives: [
+    .named(
+        "badge",
+        stateMachine: "State Machine 1",
+        inputs: [.trigger("pop"), .bool("happy", true), .number("level", 2)]
+    ),
+    .named(
+        "badge",
+        states: [
+            .animation("idle"),
+            .machine("State Machine 1", inputs: [.trigger("win")]),
+            .machine("State Machine 1", inputs: [.bool("happy", false)])
+        ]
     )
-    .allowsHitTesting(false)
-}
-```
+]
+
+Input names are the ones in the Rive editor: boolean, number, or trigger.
+Install
+
+This package depends on Lottie and Rive. Xcode fetches both when you add ConfettiKit.
+
+Private remote: push this folder to a private GitHub repo, then in Xcode choose File → Add Package Dependencies… and paste the repo URL. Sign in with an account that can read the repo.
