@@ -14,8 +14,6 @@ enum ParticleImageRenderer {
             return [renderEmoji(value, size: size)].compactMap { $0 }
         case .shape(let shape):
             return colors.compactMap { renderShape(shape, color: $0, size: size) }
-        case .sfSymbol(let name):
-            return colors.compactMap { renderSymbol(name, color: $0, size: size) }
         case .named(let name):
             return [rasterize(UIImage(named: name), size: CGSize(width: size, height: size))].compactMap { $0 }
         case .uiImage(let image):
