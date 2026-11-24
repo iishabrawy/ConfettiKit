@@ -1,11 +1,17 @@
 import SwiftUI
 
 public extension View {
-    /// Fires a full-screen confetti burst each time `trigger` changes (increment a counter).
-    /// Safe to attach to a button — particles render on the key window, not inside the control.
+    /// Fires a full-screen burst each time `trigger` changes (increment a counter).
+    ///
+    /// Each argument is its own array. Leave an array empty to skip that kind.
+    /// Lottie and Rive files play while they fall.
     func confettiCannon(
         trigger: Binding<Int>,
-        particles: [ConfettiParticle] = .default,
+        emojis: [String] = [],
+        shapes: [ConfettiShape] = [],
+        images: [ConfettiImage] = [],
+        lotties: [ConfettiLottie] = [],
+        rives: [ConfettiRive] = [],
         colors: [Color] = ConfettiConfiguration.defaultColors,
         count: Int = 80,
         size: CGFloat = 12,
@@ -18,7 +24,11 @@ public extension View {
                 trigger: trigger,
                 isActive: .constant(false),
                 configuration: ConfettiConfiguration(
-                    particles: particles,
+                    emojis: emojis,
+                    shapes: shapes,
+                    images: images,
+                    lotties: lotties,
+                    rives: rives,
                     colors: colors,
                     count: count,
                     particleSize: size,
@@ -31,10 +41,14 @@ public extension View {
         )
     }
 
-    /// Burst once when `isActive` becomes `true`. Pass `continuous: true` to keep raining until it is false.
+    /// Burst once when `isActive` becomes `true`. Pass `continuous: true` to keep going until it is false.
     func confetti(
         isActive: Binding<Bool>,
-        particles: [ConfettiParticle] = .default,
+        emojis: [String] = [],
+        shapes: [ConfettiShape] = [],
+        images: [ConfettiImage] = [],
+        lotties: [ConfettiLottie] = [],
+        rives: [ConfettiRive] = [],
         colors: [Color] = ConfettiConfiguration.defaultColors,
         count: Int = 80,
         size: CGFloat = 12,
@@ -48,7 +62,11 @@ public extension View {
                 trigger: .constant(0),
                 isActive: isActive,
                 configuration: ConfettiConfiguration(
-                    particles: particles,
+                    emojis: emojis,
+                    shapes: shapes,
+                    images: images,
+                    lotties: lotties,
+                    rives: rives,
                     colors: colors,
                     count: count,
                     particleSize: size,
@@ -71,19 +89,19 @@ struct ConfettiCannonModifier: ViewModifier {
         content
             .onChange(of: trigger) { _, newValue in
                 guard newValue != 0, !configuration.continuous else { return }
-                fireBurst()
+                Confetti.burst(configuration: configuration)
             }
             .onChange(of: isActive) { _, newValue in
                 if configuration.continuous {
                     if newValue { Confetti.start(configuration: configuration) }
                     else { Confetti.stop() }
                 } else if newValue {
-                    fireBurst()
+                    Confetti.burst(configuration: configuration)
                 }
             }
             .onAppear {
                 if trigger != 0 && !configuration.continuous {
-                    fireBurst()
+                    Confetti.burst(configuration: configuration)
                 }
                 if configuration.continuous && isActive {
                     Confetti.start(configuration: configuration)
@@ -95,10 +113,16 @@ struct ConfettiCannonModifier: ViewModifier {
                 }
             }
     }
+}
 
-    private func fireBurst() {
-        Confetti.burst(
-            particles: configuration.particles,
+extension Confetti {
+    static func burst(configuration: ConfettiConfiguration) {
+        burst(
+            emojis: configuration.emojis,
+            shapes: configuration.shapes,
+            images: configuration.images,
+            lotties: configuration.lotties,
+            rives: configuration.rives,
             colors: configuration.colors,
             count: configuration.count,
             size: configuration.particleSize,
