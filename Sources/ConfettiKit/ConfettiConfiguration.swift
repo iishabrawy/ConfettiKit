@@ -1,8 +1,15 @@
 import SwiftUI
 
 /// Knobs for a burst or a continuous rain.
-public struct ConfettiConfiguration: Equatable {
-    public var particles: [ConfettiParticle]
+///
+/// Pass any mix of arrays. Empty arrays are skipped. If every array is empty,
+/// a default set of paper shapes is used.
+public struct ConfettiConfiguration {
+    public var emojis: [String]
+    public var shapes: [ConfettiShape]
+    public var images: [ConfettiImage]
+    public var lotties: [ConfettiLottie]
+    public var rives: [ConfettiRive]
     public var colors: [Color]
     public var count: Int
     public var particleSize: CGFloat
@@ -12,7 +19,11 @@ public struct ConfettiConfiguration: Equatable {
     public var continuous: Bool
 
     public init(
-        particles: [ConfettiParticle] = .default,
+        emojis: [String] = [],
+        shapes: [ConfettiShape] = [],
+        images: [ConfettiImage] = [],
+        lotties: [ConfettiLottie] = [],
+        rives: [ConfettiRive] = [],
         colors: [Color] = ConfettiConfiguration.defaultColors,
         count: Int = 80,
         particleSize: CGFloat = 12,
@@ -21,7 +32,11 @@ public struct ConfettiConfiguration: Equatable {
         duration: TimeInterval = 3.2,
         continuous: Bool = false
     ) {
-        self.particles = particles.isEmpty ? .default : particles
+        self.emojis = emojis
+        self.shapes = shapes
+        self.images = images
+        self.lotties = lotties
+        self.rives = rives
         self.colors = colors.isEmpty ? ConfettiConfiguration.defaultColors : colors
         self.count = max(1, count)
         self.particleSize = max(4, particleSize)
@@ -39,11 +54,58 @@ public struct ConfettiConfiguration: Equatable {
         Color(red: 0.95, green: 0.45, blue: 0.78),
         Color(red: 0.45, green: 0.85, blue: 0.92)
     ]
-}
 
-extension ConfettiParticle: Equatable {
-    public static func == (lhs: ConfettiParticle, rhs: ConfettiParticle) -> Bool {
-        lhs.id == rhs.id
+    var usesDefaultShapes: Bool {
+        emojis.isEmpty && shapes.isEmpty && images.isEmpty && lotties.isEmpty && rives.isEmpty
+    }
+
+    /// Bitmap pieces for the emitter. Lottie and Rive are not included.
+    var staticParticles: [ConfettiParticle] {
+        if usesDefaultShapes { return .paper }
+        var list: [ConfettiParticle] = []
+        list.append(contentsOf: emojis.map { .emoji($0) })
+        list.append(contentsOf: shapes.map { .shape($0) })
+        for item in images {
+            switch item.source {
+            case .named(let name): list.append(.image(named: name))
+            case .image(let image): list.append(.image(image))
+            }
+        }
+        return list
+    }
+
+    /// How many pieces each non-empty group should spawn. Total is `count`.
+    func budgets() -> (emoji: Int, shape: Int, image: Int, lottie: Int, rive: Int) {
+        var keys: [String] = []
+        if usesDefaultShapes { keys.append("shape") }
+        else {
+            if !emojis.isEmpty { keys.append("emoji") }
+            if !shapes.isEmpty { keys.append("shape") }
+            if !images.isEmpty { keys.append("image") }
+            if !lotties.isEmpty { keys.append("lottie") }
+            if !rives.isEmpty { keys.append("rive") }
+        }
+        guard !keys.isEmpty else { return (0, 0, 0, 0, 0) }
+        var remaining = count
+        var shares: [String: Int] = [:]
+        for (index, key) in keys.enumerated() {
+            let left = keys.count - index
+            let share = remaining / left
+            shares[key] = share
+            remaining -= share
+        }
+        return (
+            shares["emoji"] ?? 0,
+            shares["shape"] ?? 0,
+            shares["image"] ?? 0,
+            shares["lottie"] ?? 0,
+            shares["rive"] ?? 0
+        )
+    }
+
+    var staticCount: Int {
+        let budget = budgets()
+        return budget.emoji + budget.shape + budget.image
     }
 }
 
