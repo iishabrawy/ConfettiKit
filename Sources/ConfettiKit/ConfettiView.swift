@@ -1,7 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// Full-size SwiftUI overlay that renders confetti with `CAEmitterLayer`.
+/// Full-size overlay. Prefer ``View/confettiCannon(trigger:emojis:shapes:images:lotties:rives:colors:count:size:emission:origin:duration:)``
+/// when you want the burst on the key window instead of clipped to this view.
 public struct ConfettiView: UIViewRepresentable {
     var configuration: ConfettiConfiguration
     var fireToken: Int
@@ -22,13 +23,13 @@ public struct ConfettiView: UIViewRepresentable {
     }
 
     public func makeUIView(context: Context) -> UIView {
-        let view = ConfettiEmitterView()
+        let view = ConfettiHostView()
         view.configuration = configuration
         return view
     }
 
     public func updateUIView(_ uiView: UIView, context: Context) {
-        guard let view = uiView as? ConfettiEmitterView else { return }
+        guard let view = uiView as? ConfettiHostView else { return }
         view.configuration = configuration
 
         if configuration.continuous {
