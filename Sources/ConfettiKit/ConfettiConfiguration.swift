@@ -54,7 +54,11 @@ public struct ConfettiConfiguration {
         Color(red: 0.95, green: 0.45, blue: 0.78),
         Color(red: 0.45, green: 0.85, blue: 0.92)
     ]
+}
 
+// MARK: - Particle selection
+
+extension ConfettiConfiguration {
     var usesDefaultShapes: Bool {
         emojis.isEmpty && shapes.isEmpty && images.isEmpty && lotties.isEmpty && rives.isEmpty
     }
@@ -73,48 +77,60 @@ public struct ConfettiConfiguration {
         }
         return list
     }
-
-    /// How many pieces each non-empty group should spawn. Total is `count`.
-    func budgets() -> (emoji: Int, shape: Int, image: Int, lottie: Int, rive: Int) {
-        var keys: [String] = []
-        if usesDefaultShapes { keys.append("shape") }
-        else {
-            if !emojis.isEmpty { keys.append("emoji") }
-            if !shapes.isEmpty { keys.append("shape") }
-            if !images.isEmpty { keys.append("image") }
-            if !lotties.isEmpty { keys.append("lottie") }
-            if !rives.isEmpty { keys.append("rive") }
-        }
-        guard !keys.isEmpty else { return (0, 0, 0, 0, 0) }
-        var remaining = count
-        var shares: [String: Int] = [:]
-        for (index, key) in keys.enumerated() {
-            let left = keys.count - index
-            let share = remaining / left
-            shares[key] = share
-            remaining -= share
-        }
-        return (
-            shares["emoji"] ?? 0,
-            shares["shape"] ?? 0,
-            shares["image"] ?? 0,
-            shares["lottie"] ?? 0,
-            shares["rive"] ?? 0
-        )
-    }
-
-    var staticCount: Int {
-        let budget = budgets()
-        return budget.emoji + budget.shape + budget.image
-    }
 }
 
-extension ConfettiEmission {
-    var defaultOrigin: UnitPoint {
-        switch self {
-        case .cannon, .fountain: return .bottom
-        case .rain: return .top
-        case .explosion: return .center
+// MARK: - Budgets
+
+extension ConfettiConfiguration {
+    /// How many pieces each kind should spawn.
+    struct Budget: Equatable {
+        enum Kind {
+            case emoji, shape, image, lottie, rive
         }
+
+        private(set) var emoji = 0
+        private(set) var shape = 0
+        private(set) var image = 0
+        private(set) var lottie = 0
+        private(set) var rive = 0
+
+        /// Pieces drawn by the bitmap emitter (Lottie and Rive excluded).
+        var staticTotal: Int { emoji + shape + image }
+
+        mutating func assign(_ share: Int, to kind: Kind) {
+            switch kind {
+            case .emoji: emoji = share
+            case .shape: shape = share
+            case .image: image = share
+            case .lottie: lottie = share
+            case .rive: rive = share
+            }
+        }
+    }
+
+    /// Splits `count` across every non-empty group. The total is `count`.
+    func budgets() -> Budget {
+        let kinds = activeKinds
+        var budget = Budget()
+        var remaining = count
+        for (index, kind) in kinds.enumerated() {
+            let share = remaining / (kinds.count - index)
+            budget.assign(share, to: kind)
+            remaining -= share
+        }
+        return budget
+    }
+
+    var staticCount: Int { budgets().staticTotal }
+
+    private var activeKinds: [Budget.Kind] {
+        if usesDefaultShapes { return [.shape] }
+        var kinds: [Budget.Kind] = []
+        if !emojis.isEmpty { kinds.append(.emoji) }
+        if !shapes.isEmpty { kinds.append(.shape) }
+        if !images.isEmpty { kinds.append(.image) }
+        if !lotties.isEmpty { kinds.append(.lottie) }
+        if !rives.isEmpty { kinds.append(.rive) }
+        return kinds
     }
 }

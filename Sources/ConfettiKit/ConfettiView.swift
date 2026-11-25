@@ -33,8 +33,7 @@ public struct ConfettiView: UIViewRepresentable {
         view.configuration = configuration
 
         if configuration.continuous {
-            view.setContinuous(isActive)
-            context.coordinator.lastToken = fireToken
+            applyContinuous(to: view, coordinator: context.coordinator)
             return
         }
 
@@ -49,8 +48,23 @@ public struct ConfettiView: UIViewRepresentable {
         context.coordinator.wasActive = isActive
     }
 
+    /// Stops timers and display links when SwiftUI removes the view.
+    public static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        (uiView as? ConfettiHostView)?.stop()
+    }
+
+    /// Only touches the emitter when the active flag actually changed.
+    private func applyContinuous(to view: ConfettiHostView, coordinator: Coordinator) {
+        if coordinator.appliedContinuous != isActive {
+            coordinator.appliedContinuous = isActive
+            view.setContinuous(isActive)
+        }
+        coordinator.lastToken = fireToken
+    }
+
     public final class Coordinator {
         var lastToken: Int = 0
         var wasActive = false
+        var appliedContinuous: Bool?
     }
 }

@@ -2,10 +2,14 @@ import SwiftUI
 import UIKit
 
 final class ConfettiEmitterView: UIView {
+    private static let burstWindow: TimeInterval = 0.22
+    private static let continuousWindow: Float = 6
+
     var configuration = ConfettiConfiguration() {
         didSet { rebuildCells() }
     }
 
+    // `layerClass` guarantees the backing layer is a `CAEmitterLayer`.
     private var emitter: CAEmitterLayer { layer as! CAEmitterLayer }
     private var burstWorkItem: DispatchWorkItem?
 
@@ -29,6 +33,8 @@ final class ConfettiEmitterView: UIView {
         applyGeometry()
     }
 
+    // MARK: - Control
+
     func burst() {
         applyGeometry()
         rebuildCells()
@@ -39,7 +45,7 @@ final class ConfettiEmitterView: UIView {
             self?.emitter.birthRate = 0
         }
         burstWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.burstWindow, execute: item)
     }
 
     func setContinuous(_ on: Bool) {
@@ -48,32 +54,43 @@ final class ConfettiEmitterView: UIView {
         emitter.birthRate = on ? 1 : 0
     }
 
+    /// Stops emitting without rebuilding cells or geometry.
+    func stop() {
+        burstWorkItem?.cancel()
+        burstWorkItem = nil
+        emitter.birthRate = 0
+    }
+
+    // MARK: - Geometry
+
+    private var fallbackBounds: CGRect {
+        window?.windowScene?.screen.bounds ?? .zero
+    }
+
     private func applyGeometry() {
-        let bounds = bounds.isEmpty ? UIScreen.main.bounds : bounds
+        let area = bounds.isEmpty ? fallbackBounds : bounds
         let origin = CGPoint(
-            x: configuration.origin.x * bounds.width,
-            y: configuration.origin.y * bounds.height
+            x: configuration.origin.x * area.width,
+            y: configuration.origin.y * area.height
         )
 
         switch configuration.emission {
         case .cannon:
             emitter.emitterShape = .line
             emitter.emitterPosition = origin
-            emitter.emitterSize = CGSize(width: bounds.width * 0.22, height: 1)
+            emitter.emitterSize = CGSize(width: area.width * 0.22, height: 1)
         case .rain:
             emitter.emitterShape = .rectangle
-            emitter.emitterPosition = CGPoint(x: bounds.midX, y: bounds.height * 0.25)
-            emitter.emitterSize = CGSize(width: bounds.width, height: max(1, bounds.height * 0.5))
-        case .explosion:
-            emitter.emitterShape = .point
-            emitter.emitterPosition = origin
-            emitter.emitterSize = .zero
-        case .fountain:
+            emitter.emitterPosition = CGPoint(x: area.midX, y: area.height * 0.25)
+            emitter.emitterSize = CGSize(width: area.width, height: max(1, area.height * 0.5))
+        case .explosion, .fountain:
             emitter.emitterShape = .point
             emitter.emitterPosition = origin
             emitter.emitterSize = .zero
         }
     }
+
+    // MARK: - Cells
 
     private func rebuildCells() {
         let colors = configuration.colors.map(\.uiColor)
@@ -86,7 +103,7 @@ final class ConfettiEmitterView: UIView {
             return
         }
 
-        let window: Float = configuration.continuous ? 6 : 0.22
+        let window: Float = configuration.continuous ? Self.continuousWindow : Float(Self.burstWindow)
         let total = max(configuration.staticCount, 1)
         let perCell = max(0.4, Float(total) / Float(images.count) / window)
         emitter.emitterCells = images.map { image in
@@ -97,7 +114,7 @@ final class ConfettiEmitterView: UIView {
     private func makeCell(image: CGImage, birthRate: Float) -> CAEmitterCell {
         let cell = CAEmitterCell()
         cell.contents = image
-        cell.contentsScale = 3
+        cell.contentsScale = ParticleImageRenderer.renderScale
         cell.birthRate = birthRate
         cell.lifetime = Float(configuration.duration)
         cell.lifetimeRange = Float(configuration.duration) * 0.28
@@ -108,36 +125,14 @@ final class ConfettiEmitterView: UIView {
         cell.scaleSpeed = -cell.scale / Float(max(configuration.duration, 1)) * 0.35
         cell.alphaRange = 0.15
         cell.alphaSpeed = -0.12
-        cell.velocityRange = 90
 
-        switch configuration.emission {
-        case .cannon:
-            cell.emissionLongitude = -.pi / 2
-            cell.emissionRange = .pi / 3.4
-            cell.velocity = 380
-            cell.velocityRange = 140
-            cell.yAcceleration = 260
-            cell.xAcceleration = 8
-        case .rain:
-            cell.emissionLongitude = .pi / 2
-            cell.emissionRange = .pi / 4
-            cell.velocity = 70
-            cell.velocityRange = 90
-            cell.yAcceleration = 160
-            cell.xAcceleration = 0
-        case .explosion:
-            cell.emissionLongitude = 0
-            cell.emissionRange = .pi * 2
-            cell.velocity = 280
-            cell.velocityRange = 120
-            cell.yAcceleration = 160
-        case .fountain:
-            cell.emissionLongitude = -.pi / 2
-            cell.emissionRange = .pi / 6.5
-            cell.velocity = 460
-            cell.velocityRange = 80
-            cell.yAcceleration = 420
-        }
+        let tuning = configuration.emission.cellTuning
+        cell.emissionLongitude = tuning.longitude
+        cell.emissionRange = tuning.range
+        cell.velocity = tuning.velocity
+        cell.velocityRange = tuning.velocityRange
+        cell.yAcceleration = tuning.yAcceleration
+        cell.xAcceleration = tuning.xAcceleration
         return cell
     }
 }

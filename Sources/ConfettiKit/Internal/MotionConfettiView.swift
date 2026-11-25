@@ -4,14 +4,33 @@ import UIKit
 
 /// Falling Lottie and Rive views. These cannot live in `CAEmitterLayer`.
 final class MotionConfettiView: UIView {
+    private static let maxPerSpawn = 20
+    private static let maxLiveViews = 40
+    private static let gravity: CGFloat = 920
+
     var configuration = ConfettiConfiguration()
+
     private var pieces: [Piece] = []
     private var link: CADisplayLink?
     private var lastTime: CFTimeInterval = 0
     private var rainTimer: Timer?
 
+    /// Parsed Lottie JSON keyed by its bytes, so a burst parses each file once.
+    private var lottieAnimations: [Data: LottieAnimation] = [:]
+    /// Bytes of Rive files read from disk, so a burst reads each file once.
+    private var riveFileData: [URL: Data] = [:]
+
+    // MARK: - Types
+
+    /// A created view plus whatever must stay alive with it.
+    private struct Asset {
+        let view: UIView
+        let owner: AnyObject?
+    }
+
     private final class Piece {
         let view: UIView
+        let owner: AnyObject?
         var x: CGFloat
         var y: CGFloat
         var vx: CGFloat
@@ -21,8 +40,9 @@ final class MotionConfettiView: UIView {
         var life: TimeInterval = 0
         let maxLife: TimeInterval
 
-        init(view: UIView, x: CGFloat, y: CGFloat, vx: CGFloat, vy: CGFloat, spin: CGFloat, maxLife: TimeInterval) {
-            self.view = view
+        init(asset: Asset, x: CGFloat, y: CGFloat, vx: CGFloat, vy: CGFloat, spin: CGFloat, maxLife: TimeInterval) {
+            self.view = asset.view
+            self.owner = asset.owner
             self.x = x
             self.y = y
             self.vx = vx
@@ -31,7 +51,34 @@ final class MotionConfettiView: UIView {
             self.spin = spin
             self.maxLife = maxLife
         }
+
+        func tearDown() {
+            (view as? LottieAnimationView)?.stop()
+            (owner as? RiveViewModel)?.stop()
+            view.removeFromSuperview()
+        }
     }
+
+    /// Keeps the display link from retaining the view, so the view can deallocate.
+    @MainActor
+    private final class DisplayLinkProxy: NSObject {
+        weak var target: MotionConfettiView?
+
+        init(target: MotionConfettiView) {
+            self.target = target
+            super.init()
+        }
+
+        @objc func tick(_ link: CADisplayLink) {
+            guard let target else {
+                link.invalidate()
+                return
+            }
+            target.advance(link)
+        }
+    }
+
+    // MARK: - Lifecycle
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -41,6 +88,8 @@ final class MotionConfettiView: UIView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // MARK: - Control
 
     func burst() {
         spawn(scale: 1)
@@ -53,8 +102,12 @@ final class MotionConfettiView: UIView {
         if on {
             spawn(scale: 0.35)
             startLink()
-            let timer = Timer(timeInterval: 0.45, repeats: true) { [weak self] _ in
-                self?.spawn(scale: 0.2)
+            let timer = Timer(timeInterval: 0.45, repeats: true) { [weak self] timer in
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+                MainActor.assumeIsolated { self.spawn(scale: 0.2) }
             }
             RunLoop.main.add(timer, forMode: .common)
             rainTimer = timer
@@ -66,42 +119,51 @@ final class MotionConfettiView: UIView {
         rainTimer = nil
         link?.invalidate()
         link = nil
-        pieces.forEach { $0.view.removeFromSuperview() }
+        pieces.forEach { $0.tearDown() }
         pieces.removeAll()
+        lottieAnimations.removeAll()
+        riveFileData.removeAll()
     }
+
+    // MARK: - Spawning
 
     private func spawn(scale: CGFloat) {
         let budget = configuration.budgets()
-        let lottieCount = min(20, Int((CGFloat(budget.lottie) * scale).rounded(.up)))
-        let riveCount = min(20, Int((CGFloat(budget.rive) * scale).rounded(.up)))
+        var lottieCount = min(Self.maxPerSpawn, Int((CGFloat(budget.lottie) * scale).rounded(.up)))
+        var riveCount = min(Self.maxPerSpawn, Int((CGFloat(budget.rive) * scale).rounded(.up)))
         guard lottieCount + riveCount > 0, bounds.width > 1 else { return }
+
+        let available = max(0, Self.maxLiveViews - pieces.count)
+        lottieCount = min(lottieCount, available)
+        riveCount = min(riveCount, available - lottieCount)
 
         for index in 0..<lottieCount {
             let item = configuration.lotties[index % configuration.lotties.count]
-            guard let view = makeLottie(item) else { continue }
-            add(view)
+            guard let asset = makeLottie(item) else { continue }
+            add(asset)
         }
         for index in 0..<riveCount {
             let item = configuration.rives[index % configuration.rives.count]
-            guard let view = makeRive(item) else { continue }
-            add(view)
+            guard let asset = makeRive(item) else { continue }
+            add(asset)
         }
     }
 
-    private func add(_ view: UIView) {
+    private func add(_ asset: Asset) {
+        let view = asset.view
         let side = max(configuration.particleSize * 3.2, 40)
         view.bounds = CGRect(x: 0, y: 0, width: side, height: side)
         view.isUserInteractionEnabled = false
         view.backgroundColor = .clear
         addSubview(view)
 
-        let speed = launch()
+        let start = launch()
         let piece = Piece(
-            view: view,
-            x: speed.x,
-            y: speed.y,
-            vx: speed.vx,
-            vy: speed.vy,
+            asset: asset,
+            x: start.x,
+            y: start.y,
+            vx: start.vx,
+            vy: start.vy,
             spin: CGFloat.random(in: -2.2...2.2),
             maxLife: configuration.duration * Double.random(in: 0.85...1.2)
         )
@@ -150,44 +212,60 @@ final class MotionConfettiView: UIView {
         }
     }
 
+    // MARK: - Animation loop
+
     private func startLink() {
         guard link == nil else { return }
         lastTime = CACurrentMediaTime()
-        let link = CADisplayLink(target: self, selector: #selector(step))
+        let proxy = DisplayLinkProxy(target: self)
+        let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
     }
 
-    @objc private func step(_ link: CADisplayLink) {
+    private func advance(_ link: CADisplayLink) {
         let now = link.timestamp
         let dt = min(0.032, now - lastTime)
         lastTime = now
-        let gravity: CGFloat = 920
-        var alive: [Piece] = []
-        for piece in pieces {
-            piece.life += dt
-            if piece.life >= piece.maxLife || piece.y > bounds.height + 80 {
-                piece.view.removeFromSuperview()
+
+        var write = 0
+        for read in pieces.indices {
+            let piece = pieces[read]
+            guard update(piece, dt: dt) else {
+                piece.tearDown()
                 continue
             }
-            piece.vy += gravity * dt
-            piece.x += piece.vx * dt
-            piece.y += piece.vy * dt
-            piece.rotation += piece.spin * dt
-            let fade = piece.life / piece.maxLife
-            piece.view.center = CGPoint(x: piece.x, y: piece.y)
-            piece.view.transform = CGAffineTransform(rotationAngle: piece.rotation)
-            piece.view.alpha = fade > 0.78 ? CGFloat(max(0, 1 - (fade - 0.78) / 0.22)) : 1
-            alive.append(piece)
+            pieces[write] = piece
+            write += 1
         }
-        pieces = alive
+        pieces.removeSubrange(write...)
+
         if pieces.isEmpty && rainTimer == nil {
             self.link?.invalidate()
             self.link = nil
         }
     }
 
-    private func makeLottie(_ item: ConfettiLottie) -> LottieAnimationView? {
+    /// Moves one piece forward. Returns `false` when the piece is finished.
+    private func update(_ piece: Piece, dt: TimeInterval) -> Bool {
+        piece.life += dt
+        if piece.life >= piece.maxLife || piece.y > bounds.height + 80 {
+            return false
+        }
+        piece.vy += Self.gravity * dt
+        piece.x += piece.vx * dt
+        piece.y += piece.vy * dt
+        piece.rotation += piece.spin * dt
+        let fade = piece.life / piece.maxLife
+        piece.view.center = CGPoint(x: piece.x, y: piece.y)
+        piece.view.transform = CGAffineTransform(rotationAngle: piece.rotation)
+        piece.view.alpha = fade > 0.78 ? CGFloat(max(0, 1 - (fade - 0.78) / 0.22)) : 1
+        return true
+    }
+
+    // MARK: - Lottie
+
+    private func makeLottie(_ item: ConfettiLottie) -> Asset? {
         let view: LottieAnimationView
         switch item.source {
         case .named(let name, let bundle):
@@ -213,17 +291,26 @@ final class MotionConfettiView: UIView {
                 view = LottieAnimationView(filePath: url.path)
             }
         case .data(let data):
-            guard let animation = try? LottieAnimation.from(data: data) else { return nil }
+            guard let animation = lottieAnimation(from: data) else { return nil }
             view = LottieAnimationView(animation: animation)
         }
         view.loopMode = .loop
         view.contentMode = .scaleAspectFit
         view.backgroundBehavior = .pauseAndRestore
         view.play()
-        return view
+        return Asset(view: view, owner: nil)
     }
 
-    private func makeRive(_ item: ConfettiRive) -> UIView? {
+    private func lottieAnimation(from data: Data) -> LottieAnimation? {
+        if let cached = lottieAnimations[data] { return cached }
+        guard let animation = try? LottieAnimation.from(data: data) else { return nil }
+        lottieAnimations[data] = animation
+        return animation
+    }
+
+    // MARK: - Rive
+
+    private func makeRive(_ item: ConfettiRive) -> Asset? {
         let playback = item.nextPlayback()
         switch item.source {
         case .named(let name, let bundle):
@@ -237,7 +324,7 @@ final class MotionConfettiView: UIView {
             return finish(model, inputs: playback.inputs)
         case .url(let url):
             if url.isFileURL {
-                guard let data = try? Data(contentsOf: url) else { return nil }
+                guard let data = riveData(at: url) else { return nil }
                 return riveView(data: data, playback: playback)
             }
             let model: RiveViewModel
@@ -260,6 +347,13 @@ final class MotionConfettiView: UIView {
         case .data(let data):
             return riveView(data: data, playback: playback)
         }
+    }
+
+    private func riveData(at url: URL) -> Data? {
+        if let cached = riveFileData[url] { return cached }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        riveFileData[url] = data
+        return data
     }
 
     private func riveModel(
@@ -288,7 +382,7 @@ final class MotionConfettiView: UIView {
         )
     }
 
-    private func riveView(data: Data, playback: ConfettiRive.Playback) -> UIView? {
+    private func riveView(data: Data, playback: ConfettiRive.Playback) -> Asset? {
         guard let file = try? RiveFile(data: data, loadCdn: false) else { return nil }
         let model = RiveModel(riveFile: file)
         let viewModel: RiveViewModel
@@ -308,7 +402,8 @@ final class MotionConfettiView: UIView {
         return finish(viewModel, inputs: playback.inputs)
     }
 
-    private func finish(_ model: RiveViewModel, inputs: [ConfettiRiveInput]) -> UIView {
+    /// Creates the Rive view, applies inputs, and keeps the view model alive with the piece.
+    private func finish(_ model: RiveViewModel, inputs: [ConfettiRiveInput]) -> Asset {
         let view = model.createRiveView()
         for input in inputs {
             switch input {
@@ -320,7 +415,7 @@ final class MotionConfettiView: UIView {
                 model.triggerInput(name)
             }
         }
-        return view
+        return Asset(view: view, owner: model)
     }
 
     private func fileParts(_ name: String, fallback: String) -> (name: String, ext: String) {

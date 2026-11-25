@@ -85,6 +85,9 @@ struct ConfettiCannonModifier: ViewModifier {
     @Binding var isActive: Bool
     var configuration: ConfettiConfiguration
 
+    /// True while this modifier started the continuous rain, so it never stops another view's rain.
+    @State private var ownsContinuous = false
+
     func body(content: Content) -> some View {
         content
             .onChange(of: trigger) { _, newValue in
@@ -92,43 +95,49 @@ struct ConfettiCannonModifier: ViewModifier {
                 Confetti.burst(configuration: configuration)
             }
             .onChange(of: isActive) { _, newValue in
-                if configuration.continuous {
-                    if newValue { Confetti.start(configuration: configuration) }
-                    else { Confetti.stop() }
-                } else if newValue {
-                    Confetti.burst(configuration: configuration)
-                }
+                handleActiveChange(newValue)
             }
             .onAppear {
-                if trigger != 0 && !configuration.continuous {
-                    Confetti.burst(configuration: configuration)
-                }
-                if configuration.continuous && isActive {
-                    Confetti.start(configuration: configuration)
-                }
+                handleAppear()
             }
             .onDisappear {
-                if configuration.continuous {
-                    Confetti.stop()
-                }
+                stopContinuousIfOwned()
             }
     }
-}
 
-extension Confetti {
-    static func burst(configuration: ConfettiConfiguration) {
-        burst(
-            emojis: configuration.emojis,
-            shapes: configuration.shapes,
-            images: configuration.images,
-            lotties: configuration.lotties,
-            rives: configuration.rives,
-            colors: configuration.colors,
-            count: configuration.count,
-            size: configuration.particleSize,
-            emission: configuration.emission,
-            origin: configuration.origin,
-            duration: configuration.duration
-        )
+    @MainActor
+    private func handleActiveChange(_ newValue: Bool) {
+        if configuration.continuous {
+            if newValue {
+                startContinuous()
+            } else {
+                stopContinuousIfOwned()
+            }
+        } else if newValue {
+            Confetti.burst(configuration: configuration)
+        }
+    }
+
+    @MainActor
+    private func handleAppear() {
+        if trigger != 0 && !configuration.continuous {
+            Confetti.burst(configuration: configuration)
+        }
+        if configuration.continuous && isActive {
+            startContinuous()
+        }
+    }
+
+    @MainActor
+    private func startContinuous() {
+        ownsContinuous = true
+        Confetti.start(configuration: configuration)
+    }
+
+    @MainActor
+    private func stopContinuousIfOwned() {
+        guard ownsContinuous else { return }
+        ownsContinuous = false
+        Confetti.stop()
     }
 }

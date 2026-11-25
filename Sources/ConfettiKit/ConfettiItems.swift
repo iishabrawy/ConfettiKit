@@ -35,6 +35,7 @@ public struct ConfettiLottie {
         ConfettiLottie(source: .named(name, bundle))
     }
 
+    /// A Lottie JSON or `.lottie` file on disk.
     public static func file(_ url: URL) -> ConfettiLottie {
         ConfettiLottie(source: .file(url))
     }
@@ -46,14 +47,14 @@ public struct ConfettiLottie {
 }
 
 /// One input on a Rive state machine. These move the file between states.
-public enum ConfettiRiveInput: Equatable {
+public enum ConfettiRiveInput: Equatable, Sendable {
     case bool(String, Bool)
     case number(String, Double)
     case trigger(String)
 }
 
 /// One way to play a Rive file. Pass several and each piece picks one at random.
-public enum ConfettiRiveState: Equatable {
+public enum ConfettiRiveState: Equatable, Sendable {
     /// A linear animation on the artboard.
     case animation(String)
     /// A state machine, plus the inputs that put it in a state.
@@ -94,7 +95,7 @@ public struct ConfettiRive {
         inputs: [ConfettiRiveInput] = [],
         states: [ConfettiRiveState] = []
     ) -> ConfettiRive {
-        ConfettiRive(
+        make(
             source: .named(name, bundle),
             artboard: artboard,
             animation: animation,
@@ -104,6 +105,7 @@ public struct ConfettiRive {
         )
     }
 
+    /// A `.riv` file at a file URL or a remote URL.
     public static func url(
         _ url: URL,
         artboard: String? = nil,
@@ -112,7 +114,7 @@ public struct ConfettiRive {
         inputs: [ConfettiRiveInput] = [],
         states: [ConfettiRiveState] = []
     ) -> ConfettiRive {
-        ConfettiRive(
+        make(
             source: .url(url),
             artboard: artboard,
             animation: animation,
@@ -122,6 +124,7 @@ public struct ConfettiRive {
         )
     }
 
+    /// The bytes of a `.riv` file.
     public static func data(
         _ data: Data,
         artboard: String? = nil,
@@ -130,8 +133,26 @@ public struct ConfettiRive {
         inputs: [ConfettiRiveInput] = [],
         states: [ConfettiRiveState] = []
     ) -> ConfettiRive {
-        ConfettiRive(
+        make(
             source: .data(data),
+            artboard: artboard,
+            animation: animation,
+            stateMachine: stateMachine,
+            inputs: inputs,
+            states: states
+        )
+    }
+
+    private static func make(
+        source: Source,
+        artboard: String?,
+        animation: String?,
+        stateMachine: String?,
+        inputs: [ConfettiRiveInput],
+        states: [ConfettiRiveState]
+    ) -> ConfettiRive {
+        ConfettiRive(
+            source: source,
             artboard: artboard,
             animation: animation,
             stateMachine: stateMachine,
@@ -163,4 +184,3 @@ public struct ConfettiRive {
         )
     }
 }
-

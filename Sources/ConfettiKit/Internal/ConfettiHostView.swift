@@ -15,8 +15,6 @@ final class ConfettiHostView: UIView {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         backgroundColor = .clear
-        emitter.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        motion.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(emitter)
         addSubview(motion)
     }
@@ -41,7 +39,7 @@ final class ConfettiHostView: UIView {
     }
 
     func stop() {
-        emitter.setContinuous(false)
+        emitter.stop()
         motion.stop()
     }
 }

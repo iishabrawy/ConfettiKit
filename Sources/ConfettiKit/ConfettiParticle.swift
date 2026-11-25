@@ -1,8 +1,7 @@
 import UIKit
 
 /// Static piece rendered into a `CAEmitterCell`. Built from the public arrays.
-struct ConfettiParticle: Identifiable {
-    let id = UUID()
+struct ConfettiParticle {
     let representation: Representation
 
     enum Representation {
