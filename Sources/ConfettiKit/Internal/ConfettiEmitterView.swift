@@ -105,7 +105,7 @@ final class ConfettiEmitterView: UIView {
         cell.spinRange = 6.5
         cell.scale = max(0.18, configuration.particleSize / ParticleImageRenderer.canvasSize)
         cell.scaleRange = cell.scale * 0.45
-        cell.scaleSpeed = -cell.scale / Float(max(configuration.duration, 1)) * 0.35
+        cell.scaleSpeed = -cell.scale / CGFloat(max(configuration.duration, 1)) * 0.35
         cell.alphaRange = 0.15
         cell.alphaSpeed = -0.12
         cell.velocityRange = 90
